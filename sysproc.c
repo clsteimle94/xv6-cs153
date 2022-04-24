@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "sysexit.h"
 
 int
 sys_fork(void)
@@ -16,14 +17,20 @@ sys_fork(void)
 int
 sys_exit(void)
 {
-  exit();
+  int status;
+  if(argint(0, &status) < 0)
+    return -1;
+  exit(status);
   return 0;  // not reached
 }
 
 int
 sys_wait(void)
 {
-  return wait();
+  int *status;
+  if(argptr(0, (char**)&status, sizeof(int)) < 0)
+    return -1;
+  return wait(status);
 }
 
 int
@@ -88,4 +95,34 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// ADDED sys_waitpid()
+int 
+sys_waitpid(void)
+{
+  int pid;
+  int *status;
+  int options;
+  
+  //The system call must return the process id of the child that was terminated or -1 if no child exists (or unexpected error occurred)  
+  if(argint(0, &pid) < 0) return -1; //pid check pulled from sys_kill()
+  if(argptr(1, (char**)&status, sizeof(int)) < 0) return -1;
+  if(argint(2, &options) < 0) return -1;
+
+  //From syscall.c line 48
+  // Fetch the nth 32-bit system call argument.
+  //int argint(int n, int *ip)
+
+  //From syscall.c line 58
+  // Fetch the nth word-sized system call argument as a pointer
+  // to a block of memory of size bytes.  Check that the pointer
+  // lies within the process address space.
+  //int argptr(int n, char **pp, int size)
+
+  //From sysfile.c line 76
+  //if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
+
+  //Add a waitpid system call: int waitpid(int pid, int *status, int options).
+  return waitpid(pid, status, options); //needs to return the call for waitpid
 }
