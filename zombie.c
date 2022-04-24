@@ -4,12 +4,11 @@
 #include "types.h"
 #include "stat.h"
 #include "user.h"
-#include "sysexit.h"
 
 int
 main(void)
 {
   if(fork() > 0)
     sleep(5);  // Let child exit before parent.
-  exit(EX_fail);
+  exit();
 }
