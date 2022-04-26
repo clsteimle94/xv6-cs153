@@ -88,6 +88,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->prior_val = 0; // Initialize the priority value
 
   release(&ptable.lock);
 
@@ -199,6 +200,7 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->prior_val = curproc->prior_val;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -310,6 +312,13 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+
+//Lab 2 set_prior
+int
+set_prior(int prior_lvl){
+  return 0;
+}
+
 
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
