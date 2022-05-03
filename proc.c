@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "stdio.h"
 
 struct {
   struct spinlock lock;
@@ -113,6 +114,14 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+        
+  //Set the start time (move to first instancne of exec)
+  uint xticks;
+  acquire(&tickslock);
+  xticks = ticks;
+  release(&tickslock);
+  p->starttime = xticks; 
+
   return p;
 }
 
@@ -200,7 +209,7 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-  np->prior_val = curproc->prior_val;
+  np->prior_val = curproc->prior_val; //child gets parent priority
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -263,6 +272,20 @@ exit(void)
     }
   }
 
+  //Set the end time
+  uint xticks;
+  acquire(&tickslock);
+  xticks = ticks;
+  release(&tickslock);
+  curproc->endtime = xticks;
+
+  // cprintf("start time: %d\n", curproc->starttime);
+  // cprintf("end time: %d\n", curproc->endtime);
+
+  //Print out times
+  uint turnaround = curproc->endtime - curproc->starttime;
+  cprintf("turnaround time: %d\n", turnaround);
+
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
@@ -313,13 +336,6 @@ wait(void)
   }
 }
 
-//Lab 2 set_prior
-int
-set_prior(int prior_lvl){
-  return 0;
-}
-
-
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -332,6 +348,8 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *tmpproc = NULL; //lowest prior_val process
+  int lowestval = 99;   //stores lowest prior_val
   struct cpu *c = mycpu();
   c->proc = 0;
   
@@ -339,11 +357,28 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
+    // Locking ptable
     acquire(&ptable.lock);
+
+    // Loop over process table looking for process to run.
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
-        continue;
+        continue; // goes to next iteration of loop
+      
+      if(p->prior_val < lowestval){
+        lowestval = p->prior_val;
+        tmpproc = p;
+      }
+      else {
+        if(p->prior_val > 0) p->prior_val -= 1;  
+      }
+
+      tmpproc = p;
+    }
+      
+    if(tmpproc!=NULL) {
+      p = tmpproc;
+      if(p->prior_val < 32) p->prior_val += 1; 
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -360,7 +395,6 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
 
@@ -398,6 +432,16 @@ yield(void)
   myproc()->state = RUNNABLE;
   sched();
   release(&ptable.lock);
+}
+
+//Lab 2 set_prior
+int
+set_prior(int prior_lvl){
+  struct proc *curproc = myproc();
+  curproc->prior_val = prior_lvl;
+  yield();
+  //sched();
+  return 0;
 }
 
 // A fork child's very first scheduling by scheduler()

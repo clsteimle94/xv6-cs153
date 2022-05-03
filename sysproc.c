@@ -94,5 +94,7 @@ sys_uptime(void)
 int
 sys_set_prior(void)
 {
-  return set_prior(0);
+  int pval;
+  if(argint(0, &pval) < 0) return -1;  
+  return set_prior(pval);
 }
