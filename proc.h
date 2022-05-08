@@ -50,9 +50,9 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int prior_val;               // Process proirity value (0-31) 0=highest
-  uint starttime;
-  uint endtime;
-  uint bursttime;
+  uint starttime;              // Process starting time (ticks)
+  uint endtime;                // Process end time (ticks)
+  uint bursttime;              // Process burst time (ticks)
 };
 
 // Process memory is laid out contiguously, low addresses first:

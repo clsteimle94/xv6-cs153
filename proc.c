@@ -222,7 +222,6 @@ fork(void)
   np->state = RUNNABLE;
 
   release(&ptable.lock);
-  
 
   return pid;
 }
@@ -279,9 +278,6 @@ exit(void)
   uint waiting = turnaround - curproc->bursttime;
   cprintf("turnaround time: %d\n", turnaround);
   cprintf("waiting time: %d\n\n", waiting);
-  // cprintf("start time: %d\n", curproc->starttime);
-  // cprintf("end time: %d\n", curproc->endtime);
-  // cprintf("burst time: %d\n\n", curproc->bursttime);
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
@@ -343,21 +339,19 @@ wait(void)
 //      via swtch back to the scheduler.
 void
 scheduler(void)
-{ 
+{
   struct proc *p;
   struct proc *p2;
+  struct proc *tmpproc; //lowest prior_val process
   struct cpu *c = mycpu();
   c->proc = 0;
-  struct proc *tmpproc; //lowest prior_val process
-
+  
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    // Locking ptable
-    acquire(&ptable.lock);
-
     // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
