@@ -6,7 +6,6 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-#include "stdio.h"
 
 struct {
   struct spinlock lock;
@@ -114,14 +113,6 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-        
-  //Set the start time (move to first instancne of exec)
-  uint xticks;
-  acquire(&tickslock);
-  xticks = ticks;
-  release(&tickslock);
-  p->starttime = xticks; 
-
   return p;
 }
 
@@ -210,6 +201,9 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
   np->prior_val = curproc->prior_val; //child gets parent priority
+  np->starttime = curproc->starttime;
+  np->bursttime = curproc->bursttime;
+  np->bursttime -= 2; //fork seems to add bursts, remove these
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -228,6 +222,7 @@ fork(void)
   np->state = RUNNABLE;
 
   release(&ptable.lock);
+  
 
   return pid;
 }
@@ -279,12 +274,14 @@ exit(void)
   release(&tickslock);
   curproc->endtime = xticks;
 
-  // cprintf("start time: %d\n", curproc->starttime);
-  // cprintf("end time: %d\n", curproc->endtime);
-
   //Print out times
   uint turnaround = curproc->endtime - curproc->starttime;
+  uint waiting = turnaround - curproc->bursttime;
   cprintf("turnaround time: %d\n", turnaround);
+  cprintf("waiting time: %d\n\n", waiting);
+  // cprintf("start time: %d\n", curproc->starttime);
+  // cprintf("end time: %d\n", curproc->endtime);
+  // cprintf("burst time: %d\n\n", curproc->bursttime);
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
@@ -346,13 +343,13 @@ wait(void)
 //      via swtch back to the scheduler.
 void
 scheduler(void)
-{
+{ 
   struct proc *p;
-  struct proc *tmpproc = NULL; //lowest prior_val process
-  int lowestval = 99;   //stores lowest prior_val
+  struct proc *p2;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  struct proc *tmpproc; //lowest prior_val process
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -363,22 +360,23 @@ scheduler(void)
     // Loop over process table looking for process to run.
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
-        continue; // goes to next iteration of loop
+        continue;
       
-      if(p->prior_val < lowestval){
-        lowestval = p->prior_val;
-        tmpproc = p;
-      }
-      else {
-        if(p->prior_val > 0) p->prior_val -= 1;  
+      // Initialize temp process with first of ptable
+      tmpproc = p;
+
+      // Loop over ptable again to find the lowsest prior_val
+      for(p2 = ptable.proc; p2 < &ptable.proc[NPROC]; p2++){
+        if(p2->state != RUNNABLE)
+          continue;
+        if(tmpproc->prior_val > p2->prior_val)
+          tmpproc = p2;
+        else if(p2->prior_val > 0) p2->prior_val--;
       }
 
-      tmpproc = p;
-    }
-      
-    if(tmpproc!=NULL) {
       p = tmpproc;
-      if(p->prior_val < 32) p->prior_val += 1; 
+      if(p->prior_val < 31) p->prior_val++; 
+      p->bursttime++;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -438,9 +436,9 @@ yield(void)
 int
 set_prior(int prior_lvl){
   struct proc *curproc = myproc();
+  if( prior_lvl<0 || prior_lvl>31) return -1;
   curproc->prior_val = prior_lvl;
   yield();
-  //sched();
   return 0;
 }
 

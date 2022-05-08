@@ -52,6 +52,7 @@ struct proc {
   int prior_val;               // Process proirity value (0-31) 0=highest
   uint starttime;
   uint endtime;
+  uint bursttime;
 };
 
 // Process memory is laid out contiguously, low addresses first:

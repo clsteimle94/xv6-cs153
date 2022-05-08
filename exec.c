@@ -101,6 +101,15 @@ exec(char *path, char **argv)
   curproc->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
+
+  // Set the start time for parent processes
+  uint xticks;
+  acquire(&tickslock);
+  xticks = ticks;
+  release(&tickslock);
+  curproc->starttime = xticks;
+  curproc->bursttime = 0;
+  
   return 0;
 
  bad:

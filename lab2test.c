@@ -5,7 +5,6 @@ void work() {
   int i,k;
   for(i = 0; i < 43000; i++) {
     for(k = 0; k < 43000; k++) {
-      //set_prior(i * 10);
       asm("nop");
     }
   }
