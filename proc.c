@@ -201,9 +201,13 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
   np->prior_val = curproc->prior_val; //child gets parent priority
-  np->starttime = curproc->starttime;
-  np->bursttime = curproc->bursttime;
-  np->bursttime -= 2; //fork seems to add bursts, remove these
+  
+  uint xticks;
+  acquire(&tickslock);
+  xticks = ticks;
+  release(&tickslock);
+  np->starttime = xticks;
+  np->bursttime = 0;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -387,6 +391,7 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
+    
   }
 }
 
