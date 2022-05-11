@@ -103,11 +103,7 @@ exec(char *path, char **argv)
   freevm(oldpgdir);
 
   // Set the start time for parent processes
-  uint xticks;
-  acquire(&tickslock);
-  xticks = ticks;
-  release(&tickslock);
-  curproc->starttime = xticks;
+  curproc->starttime = ticks;
   curproc->bursttime = 0;
   
   return 0;

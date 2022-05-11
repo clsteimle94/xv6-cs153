@@ -201,12 +201,7 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
   np->prior_val = curproc->prior_val; //child gets parent priority
-  
-  uint xticks;
-  acquire(&tickslock);
-  xticks = ticks;
-  release(&tickslock);
-  np->starttime = xticks;
+  np->starttime = ticks;
   np->bursttime = 0;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -271,11 +266,7 @@ exit(void)
   }
 
   //Set the end time
-  uint xticks;
-  acquire(&tickslock);
-  xticks = ticks;
-  release(&tickslock);
-  curproc->endtime = xticks;
+  curproc->endtime = ticks;
 
   //Print out times
   uint turnaround = curproc->endtime - curproc->starttime;
@@ -369,12 +360,12 @@ scheduler(void)
           continue;
         if(tmpproc->prior_val > p2->prior_val)
           tmpproc = p2;
-        else if(p2->prior_val > 0) p2->prior_val--;
+        //else if(p2->prior_val > 0) p2->prior_val--;
       }
 
-      p = tmpproc;
-      if(p->prior_val < 31) p->prior_val++; 
-      p->bursttime++;
+      p = tmpproc;  
+      //if(p->prior_val < 31) p->prior_val++;
+      int tmp = ticks;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -388,6 +379,7 @@ scheduler(void)
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
+      p->bursttime+= ticks - tmp;
       c->proc = 0;
     }
     release(&ptable.lock);
