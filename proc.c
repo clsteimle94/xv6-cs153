@@ -360,11 +360,11 @@ scheduler(void)
           continue;
         if(tmpproc->prior_val > p2->prior_val)
           tmpproc = p2;
-        //else if(p2->prior_val > 0) p2->prior_val--;
+        else if(p2->prior_val > 0) p2->prior_val--;
       }
 
       p = tmpproc;  
-      //if(p->prior_val < 31) p->prior_val++;
+      if(p->prior_val < 31) p->prior_val++;
       int tmp = ticks;
 
       // Switch to chosen process.  It is the process's job
@@ -383,7 +383,7 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-    
+
   }
 }
 
