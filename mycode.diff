@@ -1,0 +1,264 @@
+diff --git a/Makefile b/Makefile
+index 09d790c..6f3d512 100644
+--- a/Makefile
++++ b/Makefile
+@@ -181,6 +181,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_lab2test\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+@@ -217,7 +218,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 2
++CPUS := 1
+ endif
+ QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+ 
+diff --git a/defs.h b/defs.h
+index 82fb982..76cda76 100644
+--- a/defs.h
++++ b/defs.h
+@@ -120,6 +120,7 @@ void            userinit(void);
+ int             wait(void);
+ void            wakeup(void*);
+ void            yield(void);
++int             set_prior(int);
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+diff --git a/exec.c b/exec.c
+index b40134f..c2c6a43 100644
+--- a/exec.c
++++ b/exec.c
+@@ -101,6 +101,11 @@ exec(char *path, char **argv)
+   curproc->tf->esp = sp;
+   switchuvm(curproc);
+   freevm(oldpgdir);
++
++  // Set the start time for parent processes
++  curproc->starttime = ticks;
++  curproc->bursttime = 0;
++  
+   return 0;
+ 
+  bad:
+diff --git a/lab2test.c b/lab2test.c
+new file mode 100644
+index 0000000..66923ae
+--- /dev/null
++++ b/lab2test.c
+@@ -0,0 +1,32 @@
++#include "types.h"
++#include "user.h"
++
++void work() {
++  int i,k;
++  for(i = 0; i < 43000; i++) {
++    for(k = 0; k < 43000; k++) {
++      asm("nop");
++    }
++  }
++}
++
++int main() {
++  set_prior(0);
++  int i = 0;
++  int pid = 0;
++  for(i = 0; i < 3; i++) {
++    pid = fork();
++    if(!pid) {
++      set_prior(i * 10);
++      work();
++      printf(0, "child %d done\n", getpid());
++      exit();
++    }
++  }
++  if(pid) {
++    for(i = 0; i < 3; i++)
++      wait();
++  }
++  printf(0, "parent %d done\n", getpid());
++  exit();
++}
+diff --git a/proc.c b/proc.c
+index 806b1b1..b73a952 100644
+--- a/proc.c
++++ b/proc.c
+@@ -88,6 +88,7 @@ allocproc(void)
+ found:
+   p->state = EMBRYO;
+   p->pid = nextpid++;
++  p->prior_val = 0; // Initialize the priority value
+ 
+   release(&ptable.lock);
+ 
+@@ -199,6 +200,9 @@ fork(void)
+   np->sz = curproc->sz;
+   np->parent = curproc;
+   *np->tf = *curproc->tf;
++  np->prior_val = curproc->prior_val; //child gets parent priority
++  np->starttime = ticks;
++  np->bursttime = 0;
+ 
+   // Clear %eax so that fork returns 0 in the child.
+   np->tf->eax = 0;
+@@ -261,6 +265,15 @@ exit(void)
+     }
+   }
+ 
++  //Set the end time
++  curproc->endtime = ticks;
++
++  //Print out times
++  uint turnaround = curproc->endtime - curproc->starttime;
++  uint waiting = turnaround - curproc->bursttime;
++  cprintf("turnaround time: %d\n", turnaround);
++  cprintf("waiting time: %d\n\n", waiting);
++
+   // Jump into the scheduler, never to return.
+   curproc->state = ZOMBIE;
+   sched();
+@@ -323,6 +336,8 @@ void
+ scheduler(void)
+ {
+   struct proc *p;
++  struct proc *p2;
++  struct proc *tmpproc; //lowest prior_val process
+   struct cpu *c = mycpu();
+   c->proc = 0;
+   
+@@ -335,6 +350,22 @@ scheduler(void)
+     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+       if(p->state != RUNNABLE)
+         continue;
++      
++      // Initialize temp process with first of ptable
++      tmpproc = p;
++
++      // Loop over ptable again to find the lowsest prior_val
++      for(p2 = ptable.proc; p2 < &ptable.proc[NPROC]; p2++){
++        if(p2->state != RUNNABLE)
++          continue;
++        if(tmpproc->prior_val > p2->prior_val)
++          tmpproc = p2;
++        else if(p2->prior_val > 0) p2->prior_val--;
++      }
++
++      p = tmpproc;  
++      if(p->prior_val < 31) p->prior_val++;
++      int tmp = ticks;
+ 
+       // Switch to chosen process.  It is the process's job
+       // to release ptable.lock and then reacquire it
+@@ -348,6 +379,7 @@ scheduler(void)
+ 
+       // Process is done running for now.
+       // It should have changed its p->state before coming back.
++      p->bursttime+= ticks - tmp;
+       c->proc = 0;
+     }
+     release(&ptable.lock);
+@@ -391,6 +423,16 @@ yield(void)
+   release(&ptable.lock);
+ }
+ 
++//Lab 2 set_prior
++int
++set_prior(int prior_lvl){
++  struct proc *curproc = myproc();
++  if( prior_lvl<0 || prior_lvl>31) return -1;
++  curproc->prior_val = prior_lvl;
++  yield();
++  return 0;
++}
++
+ // A fork child's very first scheduling by scheduler()
+ // will swtch here.  "Return" to user space.
+ void
+diff --git a/proc.h b/proc.h
+index 1647114..1db6e1d 100644
+--- a/proc.h
++++ b/proc.h
+@@ -49,6 +49,10 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
++  int prior_val;               // Process proirity value (0-31) 0=highest
++  uint starttime;              // Process starting time (ticks)
++  uint endtime;                // Process end time (ticks)
++  uint bursttime;              // Process burst time (ticks)
+ };
+ 
+ // Process memory is laid out contiguously, low addresses first:
+diff --git a/syscall.c b/syscall.c
+index ee85261..300d6f8 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -103,6 +103,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_set_prior(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +127,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_set_prior]   sys_set_prior,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..7913d06 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_set_prior 22
+diff --git a/sysproc.c b/sysproc.c
+index 0686d29..fb7aaa2 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -89,3 +89,12 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++// Added set_prior
++int
++sys_set_prior(void)
++{
++  int pval;
++  if(argint(0, &pval) < 0) return -1;  
++  return set_prior(pval);
++}
+diff --git a/user.h b/user.h
+index 4f99c52..930a376 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int set_prior(int); //lab 2
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..4a4e709 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(set_prior)
